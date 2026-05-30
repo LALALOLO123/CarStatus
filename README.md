@@ -1,4 +1,4 @@
-# GoofyCar
+# CarStatus
 
 A Node.js / JavaScript project.
 
