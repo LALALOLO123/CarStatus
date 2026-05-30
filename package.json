@@ -1,0 +1,12 @@
+{
+  "name": "goofycar",
+  "version": "0.1.0",
+  "description": "GoofyCar project",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "license": "MIT"
+}
