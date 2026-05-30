@@ -5,9 +5,15 @@ node_modules/
 *.log
 npm-debug.log*
 
-# Environment / secrets
+# Environment / secrets — NEVER commit real credentials
 .env
 .env.*
+!.env.example
+secrets.json
+credentials.json
+config.local.json
+*.pem
+*.key
 
 # Build output
 dist/
