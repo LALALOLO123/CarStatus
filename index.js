@@ -1,72 +1,72 @@
 import 'dotenv/config';
-import { ConnectedDrive, Regions, FileTokenStore } from 'bmw-connected-drive';
+import smartcar from 'smartcar';
+import { loadTokens, saveTokens } from './tokens.js';
 
-// --- Connection test for MyBMW (North America) ---
-// Pulls your vehicle list and the first vehicle's status to confirm auth works.
+// --- CarStatus: show your BMW's status via Smartcar ---
+// Prerequisite: run `node auth.js` once to connect your car.
 
-const username = process.env.BMW_USERNAME;
-const password = process.env.BMW_PASSWORD;
-const captchaToken = process.env.BMW_CAPTCHA_TOKEN || undefined;
+const { SMARTCAR_CLIENT_ID, SMARTCAR_CLIENT_SECRET } = process.env;
+const redirectUri = process.env.SMARTCAR_REDIRECT_URI || 'http://localhost:8000/callback';
+const mode = process.env.SMARTCAR_MODE || 'live';
 
-if (!username || !password) {
-  console.error('❌ Missing BMW_USERNAME / BMW_PASSWORD. Copy .env.example to .env and fill them in.');
+let tokens = loadTokens();
+if (!tokens) {
+  console.error('❌ Not connected yet. Run `node auth.js` first to authorize your BMW.');
   process.exit(1);
 }
 
-// Persists the access/refresh token to the "access_token" file (gitignored),
-// so after the first successful login you no longer need a captcha token.
-const tokenStore = new FileTokenStore();
-const hasStoredToken = Boolean(tokenStore.retrieveToken());
-
-if (!hasStoredToken && !captchaToken) {
-  console.error(
-    '❌ First login needs a one-time captcha token.\n' +
-    '   Generate one (North America) at:\n' +
-    '   https://bimmer-connected.readthedocs.io/en/stable/captcha.html\n' +
-    '   then put it in .env as BMW_CAPTCHA_TOKEN and run again (tokens expire fast, so be quick).'
-  );
-  process.exit(1);
+// Refresh the access token if it has expired.
+if (new Date(tokens.expiration) <= new Date()) {
+  console.log('🔄 Access token expired — refreshing…');
+  const client = new smartcar.AuthClient({
+    clientId: SMARTCAR_CLIENT_ID,
+    clientSecret: SMARTCAR_CLIENT_SECRET,
+    redirectUri,
+    mode,
+  });
+  tokens = await client.exchangeRefreshToken(tokens.refreshToken);
+  saveTokens(tokens);
 }
 
-// Constructor order: (username, password, region, tokenStore?, logger?, captchaToken?)
-const api = new ConnectedDrive(username, password, Regions.NorthAmerica, tokenStore, undefined, captchaToken);
+// Try an endpoint, returning null (and a quiet note) if the car/plan doesn't support it.
+async function tryGet(label, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    console.log(`  ${label}: not available (${err?.message ?? 'unsupported'})`);
+    return null;
+  }
+}
 
 try {
-  console.log('🔐 Authenticating with MyBMW…');
-  const vehicles = await api.getVehicles();
-
+  const { vehicles } = await smartcar.getVehicles(tokens.accessToken);
   if (!vehicles.length) {
-    console.log('✅ Logged in, but no vehicles found on this account.');
+    console.log('✅ Connected, but no vehicles linked to this Smartcar account.');
     process.exit(0);
   }
 
-  console.log(`✅ Logged in. Found ${vehicles.length} vehicle(s):\n`);
-  for (const v of vehicles) {
-    console.log(`  • ${v.attributes?.year ?? ''} ${v.attributes?.model ?? 'BMW'} — VIN ${v.vin}`);
-  }
+  const vehicle = new smartcar.Vehicle(vehicles[0], tokens.accessToken, { unitSystem: 'imperial' });
 
-  // Pull detailed status for the first vehicle.
-  const first = vehicles[0];
-  console.log(`\n📊 Status for ${first.attributes?.model ?? first.vin}:`);
-  const s = await api.getVehicleStatus(first.vin);
+  const attrs = await tryGet('Info', () => vehicle.attributes());
+  if (attrs) console.log(`\n🚗 ${attrs.year ?? ''} ${attrs.make ?? ''} ${attrs.model ?? ''}`.trim());
+  else console.log('\n🚗 Your BMW');
 
-  console.log(`  Mileage:   ${s.currentMileage ?? '—'}`);
-  console.log(`  Range:     ${s.range ?? '—'}`);
-  if (s.combustionFuelLevel) {
-    console.log(`  Fuel:      ${s.combustionFuelLevel.remainingFuelPercent ?? '—'}% (${s.combustionFuelLevel.remainingFuelLiters ?? '—'} L)`);
-  }
-  if (s.electricChargingState) {
-    console.log(`  Battery:   ${s.electricChargingState.chargingLevelPercent ?? '—'}% (${s.electricChargingState.chargingStatus ?? '—'})`);
-  }
-  if (s.location?.coordinates) {
-    console.log(`  Location:  ${s.location.coordinates.latitude}, ${s.location.coordinates.longitude}`);
-  }
-  console.log(`  Doors:     ${s.doorsState?.combinedSecurityState ?? '—'}`);
-  console.log(`  Updated:   ${s.lastUpdatedAt ?? s.lastFetched ?? '—'}`);
+  console.log('📊 Status:');
 
-  console.log('\n🎉 Connection test succeeded. Token cached to "access_token" — no captcha needed next time.');
+  const odo = await tryGet('Odometer', () => vehicle.odometer());
+  if (odo) console.log(`  Odometer:  ${Math.round(odo.distance).toLocaleString()} mi`);
+
+  const fuel = await tryGet('Fuel', () => vehicle.fuel());
+  if (fuel) console.log(`  Fuel:      ${Math.round(fuel.percentRemaining * 100)}%  (~${Math.round(fuel.range)} mi range)`);
+
+  const battery = await tryGet('Battery', () => vehicle.battery());
+  if (battery) console.log(`  Battery:   ${Math.round(battery.percentRemaining * 100)}%  (~${Math.round(battery.range)} mi range)`);
+
+  const loc = await tryGet('Location', () => vehicle.location());
+  if (loc) console.log(`  Location:  ${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}`);
+
+  console.log('\n🎉 Done.');
 } catch (err) {
-  console.error('\n❌ Connection test failed:', err?.message ?? err);
-  console.error('   Common causes: expired/invalid captcha token, wrong password, or wrong region.');
+  console.error('\n❌ Failed to fetch vehicle data:', err?.message ?? err);
   process.exit(1);
 }

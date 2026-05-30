@@ -15,8 +15,9 @@ config.local.json
 *.pem
 *.key
 
-# BMW auth token cache (contains access + refresh tokens)
+# Auth token caches (contain access + refresh tokens)
 access_token
+smartcar_tokens.json
 
 # Build output
 dist/

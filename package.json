@@ -1,16 +1,17 @@
 {
   "name": "carstatus",
   "version": "0.1.0",
-  "description": "CarStatus project",
+  "description": "Show your BMW's status via the Smartcar API",
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "auth": "node auth.js",
     "start": "node index.js",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "license": "MIT",
   "dependencies": {
-    "bmw-connected-drive": "^2.4.0",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "smartcar": "^10.4.0"
   }
 }
